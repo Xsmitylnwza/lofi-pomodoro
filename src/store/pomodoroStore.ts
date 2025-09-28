@@ -1,0 +1,404 @@
+import { create } from 'zustand'
+import type { StoreApi, UseBoundStore } from 'zustand'
+import { persist } from 'zustand/middleware'
+import type { PersistOptions } from 'zustand/middleware'
+import { immer } from 'zustand/middleware/immer'
+import { isSameDay, startOfDay } from 'date-fns'
+import type {
+  AudioSettings,
+  SessionRecord,
+  SessionType,
+  TimerMachineState,
+  TimerRuntimeState,
+  TimerSettings,
+  UiSettings,
+} from '@/types'
+import {
+  DEFAULT_TIMER_SETTINGS,
+  advanceTimerState,
+  clampTimerSettings,
+  createInitialTimerState,
+  describePhase,
+  getPhaseDurationSec,
+} from '@/features/timer/timerEngine'
+import { ALERT_PROFILES, LOFI_PLAYLIST } from '@/features/audio/presets'
+import { createPersistStorage } from '@/utils/safeStorage'
+import { createId } from '@/utils/id'
+
+const STORAGE_KEY = 'lofi-pomodoro-state'
+const STORAGE_VERSION = 2
+const MAX_SESSION_HISTORY = 500
+
+interface ActiveSession {
+  id: string
+  type: SessionType
+  plannedSec: number
+  startedAt: string
+  label?: string
+}
+
+interface DailyTracker {
+  date: string // ISO string truncated at day start
+  completedWorkSessions: number
+}
+
+interface PomodoroState {
+  settings: TimerSettings
+  ui: UiSettings
+  audio: AudioSettings
+  timerMachine: TimerMachineState
+  timerRuntime: TimerRuntimeState
+  sessionHistory: SessionRecord[]
+  activeSession: ActiveSession | null
+  dailyTracker: DailyTracker
+  actions: PomodoroActions
+}
+
+interface PomodoroActions {
+  startTimer: (label?: string) => void
+  pauseTimer: () => void
+  finishTimer: () => void
+  resumeTimer: () => void
+  resetTimer: () => void
+  skipPhase: () => void
+  completePhase: (reason?: 'finished' | 'skipped') => void
+  updateTimerSettings: (partial: Partial<TimerSettings>) => void
+  updateUiSettings: (partial: Partial<UiSettings>) => void
+  updateAudioSettings: (partial: Partial<AudioSettings>) => void
+  updateLabel: (label: string) => void
+  logSession: (record: SessionRecord) => void
+  clearHistory: () => void
+  importHistory: (records: SessionRecord[]) => void
+}
+
+type PersistedSlice = Pick<
+  PomodoroState,
+  'settings' | 'ui' | 'audio' | 'sessionHistory' | 'dailyTracker'
+>
+
+type PomodoroPersistOptions = PersistOptions<PomodoroState, PersistedSlice>
+
+const DEFAULT_UI_SETTINGS: UiSettings = {
+  themeMode: 'system',
+  reduceMotion: false,
+  backgroundPresetId: 'dawn',
+  backgroundCustomUrl: undefined,
+  blurBackground: true,
+  showSeconds: false,
+  language: 'en',
+}
+
+const DEFAULT_AUDIO_SETTINGS: AudioSettings = {
+  playlistId: 'core-lofi-playlist',
+  currentTrackId: LOFI_PLAYLIST[0]?.id ?? '',
+  isPlaying: false,
+  volume: 0.65,
+  muted: false,
+  alertProfileId: ALERT_PROFILES[0]?.id ?? 'soft-chime',
+  alertVolume: 0.7,
+  alertDurationMs: 1500,
+  alertRepeats: 1,
+  alertIntervalMs: 450,
+}
+
+const initialMachine = createInitialTimerState(DEFAULT_TIMER_SETTINGS)
+
+const initialRuntime: TimerRuntimeState = {
+  phase: initialMachine.phase,
+  plannedSec: initialMachine.plannedSec,
+  isRunning: false,
+  isPaused: false,
+  sequence: initialMachine.sequence,
+  completedWorkSessions: initialMachine.completedWorkSessions,
+  roundsCompletedToday: 0,
+  label: describePhase(initialMachine.phase),
+  startTime: undefined,
+  endTime: undefined,
+  remainingMs: initialMachine.plannedSec * 1000,
+}
+
+const initialTracker: DailyTracker = {
+  date: startOfDay(new Date()).toISOString(),
+  completedWorkSessions: 0,
+}
+
+const persistStorage = createPersistStorage<PersistedSlice>()
+
+const DEFAULT_PERSISTED_SLICE: PersistedSlice = {
+  settings: DEFAULT_TIMER_SETTINGS,
+  ui: DEFAULT_UI_SETTINGS,
+  audio: DEFAULT_AUDIO_SETTINGS,
+  sessionHistory: [],
+  dailyTracker: initialTracker,
+}
+
+const usePomodoroStoreBase = create<PomodoroState>()(
+  persist(
+    immer<PomodoroState>((set, get) => ({
+      settings: DEFAULT_TIMER_SETTINGS,
+      ui: DEFAULT_UI_SETTINGS,
+      audio: DEFAULT_AUDIO_SETTINGS,
+      timerMachine: initialMachine,
+      timerRuntime: initialRuntime,
+      sessionHistory: [],
+      activeSession: null,
+      dailyTracker: initialTracker,
+      actions: {
+        startTimer: (label) => {
+          const now = Date.now()
+          set((state) => {
+            if (state.timerRuntime.isRunning) return
+
+            const plannedMs = state.timerRuntime.plannedSec * 1000
+            state.timerRuntime.isRunning = true
+            state.timerRuntime.isPaused = false
+            state.timerRuntime.startTime = now
+            state.timerRuntime.endTime = now + plannedMs
+            state.timerRuntime.remainingMs = plannedMs
+            state.timerRuntime.label = label ?? state.timerRuntime.label
+            state.activeSession = {
+              id: createId('session'),
+              type: state.timerRuntime.phase,
+              plannedSec: state.timerRuntime.plannedSec,
+              startedAt: new Date(now).toISOString(),
+              label: label ?? state.timerRuntime.label,
+            }
+          })
+        },
+        pauseTimer: () => {
+          const now = Date.now()
+          set((state) => {
+            if (!state.timerRuntime.isRunning || state.timerRuntime.isPaused) return
+            const remaining = Math.max((state.timerRuntime.endTime ?? now) - now, 0)
+            state.timerRuntime.remainingMs = remaining
+            state.timerRuntime.isRunning = false
+            state.timerRuntime.isPaused = true
+            state.timerRuntime.startTime = undefined
+            state.timerRuntime.endTime = undefined
+          })
+        },
+        finishTimer: () => {
+          set((state) => {
+            if (!state.timerRuntime.isRunning) return
+            state.timerRuntime.isRunning = false
+            state.timerRuntime.isPaused = false
+            state.timerRuntime.remainingMs = 0
+            state.timerRuntime.startTime = undefined
+            state.timerRuntime.endTime = undefined
+          })
+        },
+        resumeTimer: () => {
+          const now = Date.now()
+          set((state) => {
+            if (!state.timerRuntime.isPaused) return
+            const remaining = state.timerRuntime.remainingMs ||
+              state.timerRuntime.plannedSec * 1000
+            state.timerRuntime.isRunning = true
+            state.timerRuntime.isPaused = false
+            state.timerRuntime.startTime = now
+            state.timerRuntime.endTime = now + remaining
+          })
+        },
+        resetTimer: () => {
+          set((state) => {
+            state.timerRuntime = {
+              ...state.timerRuntime,
+              isRunning: false,
+              isPaused: false,
+              startTime: undefined,
+              endTime: undefined,
+              remainingMs: state.timerRuntime.plannedSec * 1000,
+            }
+            state.activeSession = null
+          })
+        },
+        skipPhase: () => {
+          get().actions.completePhase('skipped')
+        },
+        completePhase: (reason = 'finished') => {
+          const now = Date.now()
+          set((state) => {
+            const active = state.activeSession ?? {
+              id: createId('session'),
+              type: state.timerRuntime.phase,
+              plannedSec: state.timerRuntime.plannedSec,
+              startedAt: new Date(now - state.timerRuntime.plannedSec * 1000).toISOString(),
+              label: state.timerRuntime.label,
+            }
+
+            const plannedMs = active.plannedSec * 1000
+            const remaining = state.timerRuntime.isRunning
+              ? Math.max((state.timerRuntime.endTime ?? now) - now, 0)
+              : state.timerRuntime.remainingMs
+            const actualMs =
+              reason === 'finished'
+                ? plannedMs
+                : Math.max(plannedMs - (remaining ?? 0), 0)
+
+            const record: SessionRecord = {
+              id: active.id,
+              type: active.type,
+              plannedSec: active.plannedSec,
+              actualSec: Math.round(actualMs / 1000),
+              startedAt: active.startedAt,
+              endedAt: new Date(now).toISOString(),
+              label: active.label,
+            }
+
+            state.sessionHistory.unshift(record)
+            if (state.sessionHistory.length > MAX_SESSION_HISTORY) {
+              state.sessionHistory.length = MAX_SESSION_HISTORY
+            }
+
+            if (record.type === 'work') {
+              const today = startOfDay(new Date()).toISOString()
+              if (isSameDay(new Date(state.dailyTracker.date), new Date())) {
+                state.dailyTracker.completedWorkSessions += 1
+              } else {
+                state.dailyTracker.date = today
+                state.dailyTracker.completedWorkSessions = 1
+              }
+              state.timerRuntime.roundsCompletedToday = state.dailyTracker.completedWorkSessions
+            }
+
+            const nextMachine = advanceTimerState(state.timerMachine, state.settings)
+            const newRemainingMs = nextMachine.plannedSec * 1000
+
+            state.timerMachine = nextMachine
+            state.timerRuntime = {
+              ...state.timerRuntime,
+              phase: nextMachine.phase,
+              plannedSec: nextMachine.plannedSec,
+              sequence: nextMachine.sequence,
+              completedWorkSessions: nextMachine.completedWorkSessions,
+              isRunning: false,
+              isPaused: false,
+              startTime: undefined,
+              endTime: undefined,
+              remainingMs: newRemainingMs,
+              label: describePhase(nextMachine.phase),
+            }
+            state.activeSession = null
+
+            const shouldAutoStart =
+              (nextMachine.phase === 'work' && state.settings.autoStartWorkSessions) ||
+              (nextMachine.phase !== 'work' && state.settings.autoStartBreaks)
+
+            if (shouldAutoStart) {
+              const autoNow = now + 10
+              state.timerRuntime.isRunning = true
+              state.timerRuntime.startTime = autoNow
+              state.timerRuntime.endTime = autoNow + newRemainingMs
+              state.activeSession = {
+                id: createId('session'),
+                type: nextMachine.phase,
+                plannedSec: nextMachine.plannedSec,
+                startedAt: new Date(autoNow).toISOString(),
+              }
+            }
+          })
+        },
+        updateTimerSettings: (partial) => {
+          const now = Date.now()
+          set((state) => {
+            const merged = { ...state.settings, ...partial }
+            const nextSettings = clampTimerSettings(merged)
+            const prevPlannedSec = state.timerRuntime.plannedSec
+            const prevPlannedMs = prevPlannedSec * 1000
+
+            state.settings = nextSettings
+            state.timerMachine = {
+              ...state.timerMachine,
+              plannedSec: getPhaseDurationSec(state.timerMachine.phase, nextSettings),
+            }
+
+            const updatedPlannedSec = getPhaseDurationSec(
+              state.timerRuntime.phase,
+              nextSettings,
+            )
+            const updatedPlannedMs = updatedPlannedSec * 1000
+
+            state.timerRuntime.plannedSec = updatedPlannedSec
+
+            if (state.timerRuntime.isRunning && state.timerRuntime.startTime) {
+              const elapsed = Math.max(now - state.timerRuntime.startTime, 0)
+              const actualRemaining = Math.max(updatedPlannedMs - elapsed, 0)
+              state.timerRuntime.remainingMs = actualRemaining
+              state.timerRuntime.endTime = now + actualRemaining
+            } else {
+              const ratio = prevPlannedMs > 0 ? state.timerRuntime.remainingMs / prevPlannedMs : 1
+              state.timerRuntime.remainingMs = Math.round(updatedPlannedMs * ratio)
+              state.timerRuntime.endTime = undefined
+            }
+          })
+        },
+        updateUiSettings: (partial) => {
+          set((state) => {
+            state.ui = { ...state.ui, ...partial }
+          })
+        },
+        updateAudioSettings: (partial) => {
+          set((state) => {
+            state.audio = { ...state.audio, ...partial }
+          })
+        },
+        updateLabel: (label) => {
+          set((state) => {
+            state.timerRuntime.label = label
+            if (state.activeSession) {
+              state.activeSession.label = label
+            }
+          })
+        },
+        logSession: (record) => {
+          set((state) => {
+            state.sessionHistory.unshift(record)
+            if (state.sessionHistory.length > MAX_SESSION_HISTORY) {
+              state.sessionHistory.length = MAX_SESSION_HISTORY
+            }
+          })
+        },
+        clearHistory: () => {
+          set((state) => {
+            state.sessionHistory = []
+            state.dailyTracker = initialTracker
+            state.timerRuntime.roundsCompletedToday = 0
+          })
+        },
+        importHistory: (records) => {
+          set((state) => {
+            state.sessionHistory = records
+              .slice()
+              .sort((a, b) => (a.startedAt > b.startedAt ? -1 : 1))
+              .slice(0, MAX_SESSION_HISTORY)
+          })
+        },
+      },
+    })),
+    {
+      name: STORAGE_KEY,
+      version: STORAGE_VERSION,
+      storage: persistStorage,
+      partialize: (state: PomodoroState) => ({
+        settings: state.settings,
+        ui: state.ui,
+        audio: state.audio,
+        sessionHistory: state.sessionHistory,
+        dailyTracker: state.dailyTracker,
+      }),
+      migrate: (persistedState, version) => {
+        const state = (persistedState as PersistedSlice | undefined) ?? DEFAULT_PERSISTED_SLICE
+        if (version < 2) {
+          return {
+            ...state,
+            dailyTracker: state.dailyTracker ?? initialTracker,
+          }
+        }
+        return state
+      },
+    } satisfies PomodoroPersistOptions,
+  ),
+)
+
+export const usePomodoroStore: UseBoundStore<StoreApi<PomodoroState>> =
+  usePomodoroStoreBase as unknown as UseBoundStore<StoreApi<PomodoroState>>
