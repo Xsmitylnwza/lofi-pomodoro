@@ -106,7 +106,7 @@ export default function TimerPage() {
     }
     window.addEventListener('keydown', handleKeydown)
     return () => window.removeEventListener('keydown', handleKeydown)
-  }, [timerRuntime.isRunning, timerRuntime.isPaused, startTimer, pauseTimer, resumeTimer, resetTimer, handleAdvancePhase])
+  }, [timerRuntime.isRunning, timerRuntime.isPaused, startTimer, pauseTimer, resumeTimer, resetTimer, playClick, handleAdvancePhase])
 
   useEffect(() => {
     if (!timerRuntime.isRunning) {

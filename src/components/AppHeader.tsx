@@ -1,5 +1,6 @@
-﻿import { NavLink } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import catLogo from '@/assets/logo/cat-banner.png'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
@@ -19,8 +20,8 @@ export function AppHeader() {
   return (
     <header className="sticky top-0 z-20 bg-[var(--bg-primary)]/80 backdrop-blur-md">
       <nav className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-5">
-        <div className="flex items-center gap-2 text-lg font-semibold">
-          <span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-[var(--accent)]" />
+        <div className="flex items-center gap-3 text-lg font-semibold">
+          <img src={catLogo} alt="" className="h-9 w-9 rounded-full border border-white/60 bg-white/80 object-cover shadow-inner" />
           {t('appName')}
         </div>
         <div className="flex items-center gap-2">
