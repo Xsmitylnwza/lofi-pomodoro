@@ -1,7 +1,8 @@
-﻿import { useTranslation } from "react-i18next"
+import { useTranslation } from "react-i18next"
 import { TimerSettingsCard } from "@/features/settings/TimerSettingsCard"
 import { AlertSettingsCard } from "@/features/audio/AlertSettingsCard"
 import { AppearanceCard } from "@/features/settings/AppearanceCard"
+import { FontSettingsCard } from "@/features/settings/FontSettingsCard"
 
 export default function SettingsPage() {
   const { t } = useTranslation('common')
@@ -17,6 +18,7 @@ export default function SettingsPage() {
         <TimerSettingsCard />
         <AlertSettingsCard />
         <AppearanceCard />
+        <FontSettingsCard />
       </section>
     </div>
   )

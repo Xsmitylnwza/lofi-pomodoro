@@ -7,17 +7,19 @@ function resolveBackground(
   presetId: string,
   customUrl: string | undefined,
 ) {
-  if (customUrl) {
+  const normalizedCustom = customUrl?.trim()
+  if (normalizedCustom) {
     return {
       id: 'custom',
       label: 'Custom',
       kind: 'image' as const,
-      url: customUrl,
-      thumbnail: customUrl,
+      url: normalizedCustom,
+      thumbnail: normalizedCustom,
     }
   }
+
   const preset = BACKGROUND_PRESETS.find((item) => item.id === presetId)
-  return preset ?? null
+  return preset ?? BACKGROUND_PRESETS[0] ?? null
 }
 
 function BackgroundLayerComponent() {
@@ -35,20 +37,23 @@ function BackgroundLayerComponent() {
     return null
   }
 
+  const isSolid = background.kind === 'solid'
   const commonClass = cn(
     'h-full w-full object-cover transition duration-700 ease-out will-change-transform',
     {
-      'blur-xl scale-105': blurBackground,
+      'blur-xl scale-105': blurBackground && !isSolid,
     },
   )
 
+  const mediaClass = cn(commonClass, 'absolute inset-0 z-0')
+  const shouldOverlay = !isSolid
+
   return (
-    <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-[rgba(20,16,30,0.45)] via-[rgba(20,16,30,0.35)] to-[rgba(20,16,30,0.15)]" />
+    <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden" aria-hidden="true">
       {background.kind === 'video' && !reduceMotion ? (
         <video
           key={background.id}
-          className={cn(commonClass, 'absolute inset-0')}
+          className={mediaClass}
           autoPlay
           loop
           muted
@@ -57,15 +62,27 @@ function BackgroundLayerComponent() {
         >
           <source src={background.url} type="video/mp4" />
         </video>
+      ) : background.kind === 'solid' ? (
+        <div
+          key={background.id}
+          className={mediaClass}
+          style={{ background: background.color ?? 'var(--bg-primary)' }}
+        />
       ) : (
         <img
           key={background.id ?? background.url}
           src={background.url}
           alt=""
-          className={cn(commonClass, 'absolute inset-0')}
+          className={mediaClass}
           loading="lazy"
         />
       )}
+      {shouldOverlay ? (
+        <>
+          <div className="absolute inset-0 z-[5]" style={{ background: 'var(--bg-overlay-strong)' }} />
+          <div className="absolute inset-0 z-10 bg-gradient-to-b from-[rgba(20,16,30,0.45)] via-[rgba(20,16,30,0.35)] to-[rgba(20,16,30,0.15)]" />
+        </>
+      ) : null}
     </div>
   )
 }

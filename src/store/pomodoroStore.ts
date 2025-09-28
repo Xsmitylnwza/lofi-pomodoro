@@ -26,7 +26,7 @@ import { createPersistStorage } from '@/utils/safeStorage'
 import { createId } from '@/utils/id'
 
 const STORAGE_KEY = 'lofi-pomodoro-state'
-const STORAGE_VERSION = 2
+const STORAGE_VERSION = 3
 const MAX_SESSION_HISTORY = 500
 
 interface ActiveSession {
@@ -81,10 +81,11 @@ type PomodoroPersistOptions = PersistOptions<PomodoroState, PersistedSlice>
 const DEFAULT_UI_SETTINGS: UiSettings = {
   themeMode: 'system',
   reduceMotion: false,
-  backgroundPresetId: 'dawn',
+  backgroundPresetId: 'none',
   backgroundCustomUrl: undefined,
   blurBackground: true,
   showSeconds: false,
+  fontId: 'default',
   language: 'en',
 }
 
@@ -387,14 +388,31 @@ const usePomodoroStoreBase = create<PomodoroState>()(
         dailyTracker: state.dailyTracker,
       }),
       migrate: (persistedState, version) => {
-        const state = (persistedState as PersistedSlice | undefined) ?? DEFAULT_PERSISTED_SLICE
+        const baseState = (persistedState as PersistedSlice | undefined) ?? DEFAULT_PERSISTED_SLICE
+        let nextState: PersistedSlice = {
+          ...baseState,
+          settings: baseState.settings ?? DEFAULT_TIMER_SETTINGS,
+          ui: { ...DEFAULT_UI_SETTINGS, ...baseState.ui },
+          audio: baseState.audio ?? DEFAULT_AUDIO_SETTINGS,
+          sessionHistory: baseState.sessionHistory ?? [],
+          dailyTracker: baseState.dailyTracker ?? initialTracker,
+        }
+
         if (version < 2) {
-          return {
-            ...state,
-            dailyTracker: state.dailyTracker ?? initialTracker,
+          nextState = {
+            ...nextState,
+            dailyTracker: nextState.dailyTracker ?? initialTracker,
           }
         }
-        return state
+
+        if (version < 3) {
+          nextState = {
+            ...nextState,
+            ui: { ...DEFAULT_UI_SETTINGS, ...nextState.ui },
+          }
+        }
+
+        return nextState
       },
     } satisfies PomodoroPersistOptions,
   ),
@@ -402,3 +420,5 @@ const usePomodoroStoreBase = create<PomodoroState>()(
 
 export const usePomodoroStore: UseBoundStore<StoreApi<PomodoroState>> =
   usePomodoroStoreBase as unknown as UseBoundStore<StoreApi<PomodoroState>>
+
+

@@ -1,6 +1,16 @@
 import type { BackgroundPreset } from '@/types'
 
+const MINIMAL_THUMBNAIL = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 192"><rect fill="%23fef6f6" width="320" height="192"/></svg>'
+
 export const BACKGROUND_PRESETS: BackgroundPreset[] = [
+  {
+    id: 'none',
+    label: 'Minimal',
+    kind: 'solid',
+    url: '',
+    thumbnail: MINIMAL_THUMBNAIL,
+    color: 'var(--bg-primary)',
+  },
   {
     id: 'dawn',
     label: 'Dawn Studio',
