@@ -1,7 +1,7 @@
 import type { ChangeEvent, CSSProperties } from "react"
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useCountdown } from "@/hooks/useCountdown"
+import { usePomodoroCountdown } from "@/hooks/useCountdown"
 import { usePomodoroStore } from "@/store/pomodoroStore"
 import { advanceTimerState, describePhase, formatDurationLabel } from "@/features/timer/timerEngine"
 import type { SessionType } from "@/types"
@@ -30,7 +30,7 @@ export default function TimerPage() {
   const { play: playMusic, pause: pauseMusic, playAlert } = useAudioController()
   const playClick = useClickSound()
 
-  const { remainingMs, progress } = useCountdown()
+  const { remainingMs, progress } = usePomodoroCountdown()
   const remainingSeconds = Math.ceil(remainingMs / 1000)
   const displayTime = formatDurationLabel(remainingSeconds)
   const progressPercent = Math.min(Math.max(progress * 100, 0), 100)
@@ -269,4 +269,6 @@ function StatLine({ label, value, emphasis }: StatLineProps) {
     </div>
   )
 }
+
+
 

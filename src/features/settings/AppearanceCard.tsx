@@ -99,6 +99,18 @@ export function AppearanceCard() {
         </div>
       </div>
       <div className="mt-6 flex flex-col gap-3 text-sm">
+        <label className="flex items-start gap-3">
+          <input
+            type="checkbox"
+            checked={uiSettings.matchBackgroundTheme}
+            onChange={(event) => updateUi({ matchBackgroundTheme: event.target.checked })}
+            className="mt-1 h-4 w-4 rounded border border-white/60 bg-white/60 text-[var(--accent)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          />
+          <span className="flex flex-col gap-1">
+            <span className="font-medium">{t('matchBackgroundTheme')}</span>
+            <span className="text-xs text-[var(--text-secondary)]">{t('matchBackgroundThemeDescription')}</span>
+          </span>
+        </label>
         <label className="flex items-center gap-3">
           <input
             type="checkbox"
@@ -121,3 +133,4 @@ export function AppearanceCard() {
     </div>
   )
 }
+

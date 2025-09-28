@@ -11,6 +11,7 @@ import type {
   TimerMachineState,
   TimerRuntimeState,
   TimerSettings,
+  ThemeTokens,
   UiSettings,
 } from '@/types'
 import {
@@ -26,7 +27,7 @@ import { createPersistStorage } from '@/utils/safeStorage'
 import { createId } from '@/utils/id'
 
 const STORAGE_KEY = 'lofi-pomodoro-state'
-const STORAGE_VERSION = 3
+const STORAGE_VERSION = 4
 const MAX_SESSION_HISTORY = 500
 
 interface ActiveSession {
@@ -65,6 +66,7 @@ interface PomodoroActions {
   updateTimerSettings: (partial: Partial<TimerSettings>) => void
   updateUiSettings: (partial: Partial<UiSettings>) => void
   updateAudioSettings: (partial: Partial<AudioSettings>) => void
+  setThemeTokens: (tokens?: ThemeTokens) => void
   updateLabel: (label: string) => void
   logSession: (record: SessionRecord) => void
   clearHistory: () => void
@@ -86,6 +88,8 @@ const DEFAULT_UI_SETTINGS: UiSettings = {
   blurBackground: true,
   showSeconds: false,
   fontId: 'default',
+  matchBackgroundTheme: false,
+  themeTokens: undefined,
   language: 'en',
 }
 
@@ -343,6 +347,11 @@ const usePomodoroStoreBase = create<PomodoroState>()(
             state.audio = { ...state.audio, ...partial }
           })
         },
+        setThemeTokens: (tokens) => {
+          set((state) => {
+            state.ui.themeTokens = tokens
+          })
+        },
         updateLabel: (label) => {
           set((state) => {
             state.timerRuntime.label = label
@@ -412,7 +421,17 @@ const usePomodoroStoreBase = create<PomodoroState>()(
           }
         }
 
-        return nextState
+        if (version < 4) {
+          nextState = {
+            ...nextState,
+            ui: {
+              ...DEFAULT_UI_SETTINGS,
+              ...nextState.ui,
+              matchBackgroundTheme: nextState.ui?.matchBackgroundTheme ?? false,
+              themeTokens: undefined,
+            },
+          }
+        }        return nextState
       },
     } satisfies PomodoroPersistOptions,
   ),
@@ -420,5 +439,16 @@ const usePomodoroStoreBase = create<PomodoroState>()(
 
 export const usePomodoroStore: UseBoundStore<StoreApi<PomodoroState>> =
   usePomodoroStoreBase as unknown as UseBoundStore<StoreApi<PomodoroState>>
+
+
+
+
+
+
+
+
+
+
+
 
 

@@ -5,6 +5,7 @@ import { AppHeader } from '@/components/AppHeader'
 import { BackgroundLayer } from '@/components/BackgroundLayer'
 import { useThemeSync } from '@/hooks/useThemeSync'
 import { useFontSync } from '@/hooks/useFontSync'
+import { useBackgroundThemeTokens, useThemeTokensSync } from '@/hooks/useThemeTokens'
 import AnalyticsPage from '@/features/analytics/AnalyticsPage'
 import TimerPage from '@/features/timer/TimerPage'
 import { GlobalMusicPlayer } from '@/features/audio/GlobalMusicPlayer'
@@ -22,6 +23,8 @@ function Loader() {
 export default function App() {
   useThemeSync()
   useFontSync()
+  useBackgroundThemeTokens()
+  useThemeTokensSync()
   const language = usePomodoroStore((state) => state.ui.language)
   const { i18n } = useTranslation()
 
@@ -50,5 +53,12 @@ export default function App() {
     </div>
   )
 }
+
+
+
+
+
+
+
 
 
